@@ -6,24 +6,34 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_FUNCTIONAPP_NAME: fn-splunk-wait-box
-  AZURE_RESOURCE_GROUP: Duo
+  AZURE_FUNCTIONAPP_NAME: fn-splunk-wait-box      # Resource name (NO suffix)
+  AZURE_RESOURCE_GROUP: Duo                       # Your Resource Group
   ZIP_PATH: release.zip
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 22.x
+        uses: actions/setup-node@v4
         with:
           node-version: '22.x'
-      - run: |
+
+      # Optional: install/build if you ever add deps; harmless if none
+      - name: Install / build
+        run: |
           npm ci || npm install
           npm run build --if-present
+
       - name: Create deployment zip
-        run: zip -r "$ZIP_PATH" . -x ".git/*" ".github/*"
-      - uses: actions/upload-artifact@v4
+        run: |
+          zip -r "$ZIP_PATH" . -x ".git/*" ".github/*"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
           name: app-zip
           path: ${{ env.ZIP_PATH }}
@@ -32,14 +42,19 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download artifact
+        uses: actions/download-artifact@v4
         with:
           name: app-zip
+
+      # Login with Service Principal JSON stored as AZURE_CREDENTIALS
       - name: Azure login (Service Principal)
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-      - name: Deploy via Azure CLI (works on Flex)
+
+      # Flex-safe deploy using Azure CLI (no Kudu)
+      - name: Deploy via Azure CLI
         run: |
           az functionapp deployment source config-zip \
             --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
