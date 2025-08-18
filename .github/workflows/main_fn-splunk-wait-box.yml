@@ -6,34 +6,25 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_FUNCTIONAPP_NAME: fn-splunk-wait-box      # Resource name (NO suffix)
-  AZURE_RESOURCE_GROUP: Duo                       # Your Resource Group
+  AZURE_FUNCTIONAPP_NAME: fn-splunk-wait-box
+  AZURE_RESOURCE_GROUP: Duo
   ZIP_PATH: release.zip
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Use Node 22.x
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22.x'
-
-      # Optional: install/build if you ever add deps; harmless if none
-      - name: Install / build
+      - name: Install / build (optional)
         run: |
           npm ci || npm install
           npm run build --if-present
-
       - name: Create deployment zip
-        run: |
-          zip -r "$ZIP_PATH" . -x ".git/*" ".github/*"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        run: zip -r "$ZIP_PATH" . -x ".git/*" ".github/*"
+      - uses: actions/upload-artifact@v4
         with:
           name: app-zip
           path: ${{ env.ZIP_PATH }}
@@ -42,18 +33,23 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: app-zip
 
-      # Login with Service Principal JSON stored as AZURE_CREDENTIALS
       - name: Azure login (Service Principal)
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Flex-safe deploy using Azure CLI (no Kudu)
+      # Set the subscription explicitly (prevents "No subscriptions found")
+      - name: Select subscription
+        run: |
+          SUB_ID='${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}'
+          az account set --subscription "$SUB_ID"
+          az account show
+
+      # Flex-safe deploy (no Kudu)
       - name: Deploy via Azure CLI
         run: |
           az functionapp deployment source config-zip \
